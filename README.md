@@ -1,5 +1,5 @@
 # QuizTeX
-
+---------------
 A solution to crappy in text formulas on Quizlet. This extension allows you to render LaTeX in Quizlet browser flashcards and more. 
 
 
