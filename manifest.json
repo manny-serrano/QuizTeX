@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Quizlet LaTeX Renderer",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Automatically renders LaTeX equations on Quizlet so you can read math and physics formulas clearly.",
   "permissions": ["scripting"],
   "host_permissions": [
@@ -10,14 +10,14 @@
   "content_scripts": [
     {
       "matches": ["https://*.quizlet.com/*"],
-      "js": ["content.js", "tex-chtml.js"],
+      "js": ["content.js", "tex-svg.js"],
       "run_at": "document_idle",
       "all_frames": true
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["tex-chtml.js"],
+      "resources": ["tex-svg.js"],
       "matches": ["https://*.quizlet.com/*"]
     }
   ],

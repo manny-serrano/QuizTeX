@@ -1,8 +1,8 @@
 /**
- * Quizlet LaTeX Renderer v1.7 — content.js
+ * Quizlet LaTeX Renderer v1.8 — content.js
  *
- * LOAD ORDER: This file MUST load BEFORE tex-chtml.js in the manifest.
- * It sets window.MathJax config; tex-chtml.js reads it and adds its API
+ * LOAD ORDER: This file MUST load BEFORE tex-svg.js in the manifest.
+ * It sets window.MathJax config; tex-svg.js reads it and adds its API
  * to the same object.
  *
  * RENDERING STRATEGY:
@@ -27,12 +27,15 @@
   if (window.__qlLatex) return;
   window.__qlLatex = true;
 
-  // ── MathJax config — set BEFORE tex-chtml.js reads it ─────────────────────
+  // ── MathJax config — set BEFORE tex-svg.js reads it ────────────────────────
   window.MathJax = {
     tex: {
       inlineMath:  [['\\(', '\\)'], ['$', '$']],
       displayMath: [['\\[', '\\]'], ['$$', '$$']],
       processEscapes: true
+    },
+    svg: {
+      fontCache: 'local'
     },
     options: {
       skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
