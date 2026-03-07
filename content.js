@@ -60,12 +60,18 @@
     '[class*="MatchModeQuestionGridTile"]',
     '[class*="MatchModeQuestionGridBoard"]',
     '[class*="MatchModeQuestionScatterBoard"]',
+    '[class*="BlastMode"]',
+    '[class*="BlastGame"]',
+    '[class*="BlastRound"]',
+    '[class*="BlastPrompt"]',
+    '[class*="BlastOption"]',
     '[class*="GravityMode"]',
     '[class*="GameTile"]',
     '[class*="game-tile"]'
   ].join(',');
 
   var MATCH_GAME_SELECTOR = '[class*="MatchModeQuestionGridBoard"], [class*="MatchModeQuestionScatterBoard"], [class*="MatchModeQuestionGridTile"]';
+  var BLAST_GAME_SELECTOR = '[class*="BlastMode"], [class*="BlastGame"], [class*="BlastRound"], [class*="BlastPrompt"], [class*="BlastOption"]';
 
   var OBSERVE_CONFIG = {
     childList:       true,
@@ -88,17 +94,81 @@
     return document.body && document.body.querySelector(MATCH_GAME_SELECTOR);
   }
 
+  function isBlastGameActive() {
+    return document.body && document.body.querySelector(BLAST_GAME_SELECTOR);
+  }
+
   function isLikelyMatchModeRoute() {
     var href = String(location.href || '').toLowerCase();
     return href.indexOf('/match') !== -1;
   }
 
+  function isLikelyBlastModeRoute() {
+    var href = String(location.href || '').toLowerCase();
+    return href.indexOf('/blast') !== -1;
+  }
+
+  function isFastGameFlow() {
+    return isMatchGameActive() || isLikelyMatchModeRoute() ||
+      isBlastGameActive() || isLikelyBlastModeRoute();
+  }
+
   function getTargets() {
     var results = [];
+    var seen = new Set();
+
+    function addTarget(el) {
+      if (!el || !el.nodeType || el.nodeType !== 1) return;
+      if (isMathJaxNode(el)) return;
+      if (seen.has(el)) return;
+      seen.add(el);
+      results.push(el);
+    }
+
+    function collectMathTextTargets(root) {
+      try {
+        var walker = document.createTreeWalker(
+          root, NodeFilter.SHOW_TEXT, null, false
+        );
+        var node;
+        while ((node = walker.nextNode())) {
+          if (!MATH_RE.test(node.nodeValue || '')) continue;
+          var el = node.parentElement;
+          if (!el) continue;
+
+          var insideMathJax = false;
+          var cursor = el;
+          while (cursor) {
+            if (isMathJaxNode(cursor)) {
+              insideMathJax = true;
+              break;
+            }
+            cursor = cursor.parentElement;
+          }
+          if (insideMathJax) continue;
+
+          addTarget(el);
+        }
+      } catch (_) {}
+    }
+
+    function hasSelectedAncestor(el) {
+      var p = el.parentElement;
+      while (p) {
+        if (seen.has(p)) return true;
+        p = p.parentElement;
+      }
+      return false;
+    }
+
     function collect(root) {
       try {
         var els = root.querySelectorAll(SELECTORS);
-        for (var i = 0; i < els.length; i++) results.push(els[i]);
+        for (var i = 0; i < els.length; i++) {
+          // Only include selector hits that still contain raw math text.
+          if (MATH_RE.test(els[i].textContent || '')) addTarget(els[i]);
+        }
+        collectMathTextTargets(root);
         var hosts = root.querySelectorAll('*');
         for (var i = 0; i < hosts.length; i++) {
           if (hosts[i].shadowRoot) collect(hosts[i].shadowRoot);
@@ -106,7 +176,13 @@
       } catch (_) {}
     }
     if (document.body) collect(document.body);
-    return results.length ? results : [document.body];
+
+    // Prevent duplicate rendering from overlapping ancestor/descendant targets.
+    var pruned = [];
+    for (var i = 0; i < results.length; i++) {
+      if (!hasSelectedAncestor(results[i])) pruned.push(results[i]);
+    }
+    return pruned;
   }
 
   function isMathJaxNode(node) {
@@ -159,15 +235,10 @@
     pauseObserver();
 
     var targets = getTargets();
-
-    // Clear MathJax's internal record so it won't throw "already typeset"
-    // when the same container (e.g. document.body) is re-scanned. Already-
-    // rendered SVGs stay in the DOM; only new raw LaTeX gets processed.
-    try {
-      if (typeof MathJax.typesetClear === 'function') {
-        MathJax.typesetClear(targets);
-      }
-    } catch (_) {}
+    if (!targets.length) {
+      renderDone();
+      return;
+    }
 
     // Prefer synchronous typeset — immune to the MathJax 3 promise-chain
     // bug where a single rejection permanently stalls all future calls.
@@ -192,13 +263,13 @@
   }
 
   function scheduleRender() {
-    var inMatchFlow = isMatchGameActive() || isLikelyMatchModeRoute();
-    var delay = inMatchFlow ? 30 : 150;
+    var inFastFlow = isFastGameFlow();
+    var delay = inFastFlow ? 30 : 150;
 
-    // In match mode, avoid starvation from continuous mutations by not
+    // In fast game modes, avoid starvation from continuous mutations by not
     // repeatedly resetting an already-scheduled render.
     if (debounceTimer) {
-      if (inMatchFlow) return;
+      if (inFastFlow) return;
       clearTimeout(debounceTimer);
     }
 
@@ -208,13 +279,13 @@
     }, delay);
   }
 
-  // Run immediate render + staggered follow-ups for match game (content appears
+  // Run immediate render + staggered follow-ups for fast game modes (content appears
   // when user clicks Start, often in stages; debounce alone is too slow).
   function matchGameBurst() {
     if (matchGameBurstTimer) clearTimeout(matchGameBurstTimer);
     matchGameBurstTimer = setTimeout(function () {
       matchGameBurstTimer = null;
-      if (!isMatchGameActive() && !isLikelyMatchModeRoute()) return;
+      if (!isFastGameFlow()) return;
       render();
       setTimeout(function () { if (hasUnrenderedMath()) scheduleRender(); }, 80);
       setTimeout(function () { if (hasUnrenderedMath()) scheduleRender(); }, 250);
@@ -225,25 +296,28 @@
   }
 
   // ── Mutation filter ───────────────────────────────────────────────────────
-  function mutationAffectsMatchGame(m) {
+  function mutationAffectsFastGame(m) {
     if (m.addedNodes && m.addedNodes.length > 0) {
       for (var i = 0; i < m.addedNodes.length; i++) {
         var n = m.addedNodes[i];
         if (n.nodeType !== 1) continue;
         if (n.querySelector && n.querySelector(MATCH_GAME_SELECTOR)) return true;
         if (n.matches && n.matches(MATCH_GAME_SELECTOR)) return true;
+        if (n.querySelector && n.querySelector(BLAST_GAME_SELECTOR)) return true;
+        if (n.matches && n.matches(BLAST_GAME_SELECTOR)) return true;
       }
     }
     var el = m.target.nodeType === 1 ? m.target : (m.target.parentElement || m.target);
     while (el && el !== document.body) {
       if (el.matches && el.matches(MATCH_GAME_SELECTOR)) return true;
+      if (el.matches && el.matches(BLAST_GAME_SELECTOR)) return true;
       el = el.parentElement;
     }
     return false;
   }
 
   function onMutation(mutations) {
-    var sawMatchGame = false;
+    var sawFastGame = false;
     for (var i = 0; i < mutations.length; i++) {
       var m = mutations[i];
 
@@ -251,7 +325,7 @@
         if (m.attributeName && m.attributeName.indexOf('data-mjx') === 0) continue;
         if (isMathJaxNode(m.target)) continue;
         scheduleRender();
-        if (mutationAffectsMatchGame(m)) sawMatchGame = true;
+        if (mutationAffectsFastGame(m)) sawFastGame = true;
         continue;
       }
 
@@ -260,10 +334,10 @@
       var changed = Array.from(m.addedNodes).concat(Array.from(m.removedNodes));
       if (changed.length > 0 && changed.every(isMathJaxNode)) continue;
 
-      if (mutationAffectsMatchGame(m)) sawMatchGame = true;
+      if (mutationAffectsFastGame(m)) sawFastGame = true;
       scheduleRender();
     }
-    if (sawMatchGame) matchGameBurst();
+    if (sawFastGame) matchGameBurst();
   }
 
   // ── MutationObserver ──────────────────────────────────────────────────────
@@ -313,10 +387,10 @@
     }
   }, 500);
 
-  // Match game: poll every 100ms when active (board appears on Start click,
+  // Fast game modes: poll every 100ms when active (board appears on Start click,
   // often after boot; 500ms is too slow for initial render).
   setInterval(function () {
-    if (isMatchGameActive() && !isRendering && hasUnrenderedMath()) {
+    if (isFastGameFlow() && !isRendering && hasUnrenderedMath()) {
       scheduleRender();
     }
   }, 100);
@@ -337,10 +411,10 @@
   window.addEventListener('popstate',   scheduleRender);
   window.addEventListener('hashchange', scheduleRender);
 
-  // Start button interaction in match mode can happen before the board tiles
+  // Start button interaction in fast game modes can happen before the board tiles
   // are fully mounted. Kick a burst on user interaction to catch first paint.
   document.addEventListener('pointerup', function () {
-    if (isLikelyMatchModeRoute() || isMatchGameActive()) {
+    if (isFastGameFlow()) {
       matchGameBurst();
     }
   }, true);
