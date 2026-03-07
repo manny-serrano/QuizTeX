@@ -1,25 +1,17 @@
 /**
- * Quizlet LaTeX Renderer v1.8 — content.js
+ * Quizlet LaTeX Renderer v1.9 — content.js
  *
  * LOAD ORDER: This file MUST load BEFORE tex-svg.js in the manifest.
- * It sets window.MathJax config; tex-svg.js reads it and adds its API
- * to the same object.
  *
- * RENDERING STRATEGY:
- *   MathJax 3 is destructive — it REPLACES source text nodes (\( x^2 \))
- *   with <mjx-container> elements. The original text is gone. If you remove
- *   the mjx-container, you get blank space — there's nothing left to re-render.
- *
- *   Therefore we NEVER remove mjx-containers. Instead:
- *     1. Call MathJax.typesetClear() to reset the internal state machine
- *        (so MathJax will re-run findMath on the next typesetPromise call)
- *     2. Call MathJax.typesetPromise(targets) — MathJax scans for text nodes
- *        containing math delimiters. Already-rendered math has no text nodes
- *        (they were consumed), so MathJax only finds and processes NEW content
- *        from card switches. Existing rendered math is untouched.
- *
- *   This makes re-rendering idempotent: calling render() extra times is
- *   harmless — MathJax scans, finds nothing new, and returns.
+ * KEY DESIGN DECISIONS:
+ *   - SVG output (tex-svg.js): renders math as vector paths, no external
+ *     font files needed, immune to CSP restrictions.
+ *   - Synchronous MathJax.typeset(): avoids a critical MathJax 3 bug where
+ *     typesetPromise()'s internal promise chain breaks permanently if any
+ *     call rejects. typeset() uses try/catch instead — no chain to break.
+ *   - Never removes <mjx-container> elements: MathJax consumes source text
+ *     when rendering; deleting containers leaves blank space.
+ *   - Observer paused during typeset to prevent feedback loops.
  */
 (function () {
   'use strict';
@@ -27,7 +19,7 @@
   if (window.__qlLatex) return;
   window.__qlLatex = true;
 
-  // ── MathJax config — set BEFORE tex-svg.js reads it ────────────────────────
+  // ── MathJax config — set BEFORE tex-svg.js reads it ───────────────────────
   window.MathJax = {
     tex: {
       inlineMath:  [['\\(', '\\)'], ['$', '$']],
@@ -64,14 +56,11 @@
     '[class*="TermDefinition"]',
     '[class*="NestableFlashcard"]',
     '[class*="LearnModeQuestion"]',
-    // Match / Scatter game modes
+    '[class*="MatchMode"]',
     '[class*="MatchModeQuestionGridTile"]',
     '[class*="MatchModeQuestionGridBoard"]',
     '[class*="MatchModeQuestionScatterBoard"]',
-    '[class*="MatchMode"]',
-    // Gravity mode
     '[class*="GravityMode"]',
-    // Generic game containers
     '[class*="GameTile"]',
     '[class*="game-tile"]'
   ].join(',');
@@ -99,7 +88,8 @@
 
   function isMathJaxNode(node) {
     if (!node || !node.nodeName) return false;
-    return node.nodeName.toLowerCase().indexOf('mjx-') === 0;
+    var name = node.nodeName.toLowerCase();
+    return name.indexOf('mjx-') === 0 || name === 'svg';
   }
 
   function pauseObserver() {
@@ -113,38 +103,52 @@
   }
 
   // ── render ────────────────────────────────────────────────────────────────
+  function renderDone() {
+    isRendering = false;
+    resumeObserver();
+    if (pendingRender) {
+      pendingRender = false;
+      scheduleRender();
+    }
+  }
+
   function render() {
     if (isRendering) {
       pendingRender = true;
       return;
     }
-    if (!window.MathJax || !MathJax.typesetPromise) return;
+    if (!window.MathJax) return;
+
+    var canSync  = typeof MathJax.typeset === 'function';
+    var canAsync = typeof MathJax.typesetPromise === 'function';
+    if (!canSync && !canAsync) return;
 
     isRendering   = true;
     pendingRender = false;
-
     pauseObserver();
 
-    // Reset MathJax's internal state machine so findMath() re-scans the DOM.
-    // DO NOT remove <mjx-container> elements — MathJax consumed the source
-    // text when it created them; removing them leaves blank space.
+    var targets = getTargets();
+
+    // Prefer synchronous typeset — immune to the MathJax 3 promise-chain
+    // bug where a single rejection permanently stalls all future calls.
+    if (canSync) {
+      try {
+        MathJax.typeset(targets);
+      } catch (_) {}
+      renderDone();
+      return;
+    }
+
+    // Async fallback: repair the internal promise chain before appending.
     try {
-      if (typeof MathJax.typesetClear === 'function') {
-        MathJax.typesetClear();
+      if (MathJax.startup && MathJax.startup.promise) {
+        MathJax.startup.promise = MathJax.startup.promise.catch(function () {});
       }
     } catch (_) {}
 
-    MathJax.typesetPromise(getTargets())
+    MathJax.typesetPromise(targets)
       .catch(function () {})
-      .then(function () {
-        isRendering = false;
-        resumeObserver();
-
-        if (pendingRender) {
-          pendingRender = false;
-          scheduleRender();
-        }
-      });
+      .then(renderDone);
   }
 
   function scheduleRender() {
@@ -185,8 +189,6 @@
   }
 
   // ── Unrendered-math safety poll ───────────────────────────────────────────
-  // Uses \( and \[ and $$ but NOT single $ (too many false positives from
-  // currency strings like "$5.99" in Quizlet's UI).
   var MATH_RE = /\\\(|\\\[|\$\$/;
 
   function hasUnrenderedMath() {
@@ -241,7 +243,7 @@
 
   // ── Boot ──────────────────────────────────────────────────────────────────
   var bootCheck = setInterval(function () {
-    if (window.MathJax && MathJax.typesetPromise) {
+    if (window.MathJax && (MathJax.typeset || MathJax.typesetPromise)) {
       clearInterval(bootCheck);
       render();
       startObserver();
