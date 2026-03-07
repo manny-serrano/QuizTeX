@@ -63,7 +63,17 @@
     '[class*="term-definition"]',
     '[class*="TermDefinition"]',
     '[class*="NestableFlashcard"]',
-    '[class*="LearnModeQuestion"]'
+    '[class*="LearnModeQuestion"]',
+    // Match / Scatter game modes
+    '[class*="MatchModeQuestionGridTile"]',
+    '[class*="MatchModeQuestionGridBoard"]',
+    '[class*="MatchModeQuestionScatterBoard"]',
+    '[class*="MatchMode"]',
+    // Gravity mode
+    '[class*="GravityMode"]',
+    // Generic game containers
+    '[class*="GameTile"]',
+    '[class*="game-tile"]'
   ].join(',');
 
   var OBSERVE_CONFIG = {
