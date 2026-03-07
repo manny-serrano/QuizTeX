@@ -1,12 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Quizlet LaTeX Renderer",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Automatically renders LaTeX equations on Quizlet so you can read math and physics formulas clearly.",
-  "permissions": ["scripting"],
   "host_permissions": [
     "https://*.quizlet.com/*"
   ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "content_scripts": [
     {
       "matches": ["https://*.quizlet.com/*"],
@@ -24,6 +28,11 @@
     }
   ],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   }
 }
