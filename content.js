@@ -1,15 +1,17 @@
 /**
- * Quizlet LaTeX Renderer v2.1 — content.js
+ * Quizlet LaTeX Renderer v1.9 — content.js
  *
  * LOAD ORDER: This file MUST load BEFORE tex-svg.js in the manifest.
  *
  * KEY DESIGN DECISIONS:
- *   - SVG output (tex-svg.js): vector paths, no external fonts, CSP-immune.
- *   - Synchronous MathJax.typeset(): avoids MathJax 3 promise-chain issues.
- *   - Never removes <mjx-container>: MathJax consumes source text on render.
+ *   - SVG output (tex-svg.js): renders math as vector paths, no external
+ *     font files needed, immune to CSP restrictions.
+ *   - Synchronous MathJax.typeset(): avoids a critical MathJax 3 bug where
+ *     typesetPromise()'s internal promise chain breaks permanently if any
+ *     call rejects. typeset() uses try/catch instead — no chain to break.
+ *   - Never removes <mjx-container> elements: MathJax consumes source text
+ *     when rendering; deleting containers leaves blank space.
  *   - Observer paused during typeset to prevent feedback loops.
- *   - Safety poll calls render() DIRECTLY (not through debounce) so that
- *     continuous Quizlet animations can't starve the render queue.
  */
 (function () {
   'use strict';
@@ -86,7 +88,8 @@
 
   function isMathJaxNode(node) {
     if (!node || !node.nodeName) return false;
-    return node.nodeName.toLowerCase().indexOf('mjx-') === 0;
+    var name = node.nodeName.toLowerCase();
+    return name.indexOf('mjx-') === 0 || name === 'svg';
   }
 
   function pauseObserver() {
@@ -126,6 +129,8 @@
 
     var targets = getTargets();
 
+    // Prefer synchronous typeset — immune to the MathJax 3 promise-chain
+    // bug where a single rejection permanently stalls all future calls.
     if (canSync) {
       try {
         MathJax.typeset(targets);
@@ -134,6 +139,7 @@
       return;
     }
 
+    // Async fallback: repair the internal promise chain before appending.
     try {
       if (MathJax.startup && MathJax.startup.promise) {
         MathJax.startup.promise = MathJax.startup.promise.catch(function () {});
@@ -147,7 +153,7 @@
 
   function scheduleRender() {
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(render, 200);
+    debounceTimer = setTimeout(render, 150);
   }
 
   // ── Mutation filter ───────────────────────────────────────────────────────
@@ -183,11 +189,6 @@
   }
 
   // ── Unrendered-math safety poll ───────────────────────────────────────────
-  // Calls render() DIRECTLY — not through scheduleRender(). This is critical:
-  // Quizlet's match game fires continuous mutations (timer, animations) that
-  // keep resetting the debounce timer. The safety poll bypasses the debounce
-  // entirely, guaranteeing that unrendered math gets processed every 300 ms
-  // regardless of how busy the mutation stream is.
   var MATH_RE = /\\\(|\\\[|\$\$/;
 
   function hasUnrenderedMath() {
@@ -213,15 +214,9 @@
 
   setInterval(function () {
     if (!isRendering && hasUnrenderedMath()) {
-      render();
+      scheduleRender();
     }
-  }, 300);
-
-  // ── Tab visibility / focus ────────────────────────────────────────────────
-  document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) scheduleRender();
-  });
-  window.addEventListener('focus', scheduleRender);
+  }, 500);
 
   // ── SPA navigation listeners ──────────────────────────────────────────────
   function patchHistoryMethod(method) {
@@ -252,10 +247,7 @@
       clearInterval(bootCheck);
       render();
       startObserver();
-      setTimeout(render, 500);
-      setTimeout(render, 1000);
       setTimeout(render, 2000);
-      setTimeout(render, 4000);
     }
   }, 100);
 
