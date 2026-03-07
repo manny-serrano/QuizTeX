@@ -1,40 +1,25 @@
 /**
- * Quizlet LaTeX Renderer v1.5 — content.js
+ * Quizlet LaTeX Renderer v1.6 — content.js
  *
- * ── v1.4 fix (still in place) ───────────────────────────────────────────────
- *   MathJax's own DOM mutations (adding/removing <mjx-container> elements)
- *   were firing the MutationObserver and creating an infinite render loop.
- *   Fix: disconnect the observer before fullReset+typesetPromise, reconnect
- *   after the Promise resolves.
+ * CRITICAL: This file MUST load BEFORE tex-chtml.js in the manifest.
+ * MathJax 3 reads window.MathJax for config at initialization. If tex-chtml.js
+ * loads first, it initializes with defaults and attaches its API (typesetPromise,
+ * startup, etc.) to window.MathJax. Then this script overwrites that object with
+ * a plain config literal, destroying every API method. All subsequent render()
+ * calls silently bail out because MathJax.typesetPromise is undefined.
  *
- * ── v1.5 fix ────────────────────────────────────────────────────────────────
- *   "Next card works, flip works, but next card doesn't render LaTeX."
- *
- *   Root cause: Quizlet advances cards by toggling CSS classes / aria-hidden
- *   attributes on card container elements — these are ATTRIBUTE mutations.
- *   The v1.4 observer only watched childList + characterData, so it missed
- *   these transitions entirely, and MathJax was never told to re-run.
- *
- *   Fix A — attribute watching:
- *     Add `attributes: true` + `attributeFilter: ['class','aria-hidden','hidden']`
- *     to the observer config. Now class toggles and aria-hidden flips that
- *     reveal a new card surface are caught immediately.
- *
- *   Fix B — unrendered-math safety poll (500 ms):
- *     Walk the visible DOM every 500 ms; if any text node contains a LaTeX
- *     delimiter that is NOT inside a <mjx-container>, schedule a render.
- *     This is the belt-and-suspenders catch-all for any transition mechanism
- *     the observer still misses (custom events, requestAnimationFrame swaps,
- *     inline-style opacity changes, etc.).
+ * With the correct order (content.js → tex-chtml.js):
+ *   1. This script sets window.MathJax = { config... }
+ *   2. tex-chtml.js reads that config and ADDS its runtime API to the same object
+ *   3. window.MathJax now has both our config and MathJax's methods
  */
 (function () {
   'use strict';
 
-  // ── Prevent double-injection ─────────────────────────────────────────────
   if (window.__qlLatex) return;
   window.__qlLatex = true;
 
-  // ── MathJax config ────────────────────────────────────────────────────────
+  // ── MathJax config — set BEFORE tex-chtml.js reads it ─────────────────────
   window.MathJax = {
     tex: {
       inlineMath:  [['\\(', '\\)'], ['$', '$']],
@@ -70,14 +55,11 @@
     '[class*="LearnModeQuestion"]'
   ].join(',');
 
-  // ── Observer config ───────────────────────────────────────────────────────
-  // attributes: true catches class / aria-hidden toggles that reveal new cards.
-  // attributeFilter limits scope so we aren't flooded by every attribute change.
   var OBSERVE_CONFIG = {
-    childList:     true,
-    subtree:       true,
-    characterData: true,
-    attributes:    true,
+    childList:       true,
+    subtree:         true,
+    characterData:   true,
+    attributes:      true,
     attributeFilter: ['class', 'aria-hidden', 'hidden', 'style']
   };
 
@@ -89,32 +71,25 @@
   var debounceTimer = null;
 
   // ── fullReset ─────────────────────────────────────────────────────────────
-  // Called while observer is disconnected, so DOM mutations don't re-trigger.
   function fullReset() {
+    // Use the official MathJax 3 API to clear typeset state (available 3.0+).
     try {
-      var doc = MathJax.startup && MathJax.startup.document;
-      if (!doc) return;
-
-      doc.state(0);
-
-      if (doc.math && typeof doc.math.clear === 'function') {
-        doc.math.clear();
-      } else if (doc.math && doc.math.list) {
-        doc.math.list = [];
-      }
-
-      if (doc.math && typeof doc.math.toArray === 'function') {
-        try {
-          var items = doc.math.toArray();
-          for (var i = items.length - 1; i >= 0; i--) {
-            try { doc.math.remove(items[i]); } catch (_) {}
-          }
-        } catch (_) {}
+      if (typeof MathJax.typesetClear === 'function') {
+        MathJax.typesetClear();
       }
     } catch (_) {}
 
+    // Remove all rendered MathJax output from the DOM.
     try {
-      document.querySelectorAll('*').forEach(function (el) {
+      document.querySelectorAll('mjx-container').forEach(function (c) {
+        c.remove();
+      });
+    } catch (_) {}
+
+    // Strip data-mjx-* attributes so MathJax doesn't skip re-processing nodes.
+    try {
+      var tagged = document.querySelectorAll('[data-mjx-texclass],[data-mjx-alternate]');
+      tagged.forEach(function (el) {
         var toRemove = [];
         for (var i = 0; i < el.attributes.length; i++) {
           if (el.attributes[i].name.indexOf('data-mjx') === 0) {
@@ -122,12 +97,6 @@
           }
         }
         toRemove.forEach(function (a) { el.removeAttribute(a); });
-      });
-    } catch (_) {}
-
-    try {
-      document.querySelectorAll('mjx-container').forEach(function (c) {
-        c.remove();
       });
     } catch (_) {}
   }
@@ -143,7 +112,6 @@
     return node.nodeName.toLowerCase().indexOf('mjx-') === 0;
   }
 
-  // ── Observer pause / resume ───────────────────────────────────────────────
   function pauseObserver() {
     if (observer) observer.disconnect();
   }
@@ -165,7 +133,7 @@
     isRendering   = true;
     pendingRender = false;
 
-    pauseObserver();   // stop observer so MathJax's own DOM writes don't re-trigger
+    pauseObserver();
     fullReset();
 
     MathJax.typesetPromise(getTargets())
@@ -191,18 +159,13 @@
     for (var i = 0; i < mutations.length; i++) {
       var m = mutations[i];
 
-      // Skip MathJax-originated attribute writes (data-mjx-* won't appear
-      // here because of attributeFilter, but guard for safety).
       if (m.type === 'attributes') {
         if (m.attributeName && m.attributeName.indexOf('data-mjx') === 0) continue;
         if (isMathJaxNode(m.target)) continue;
-        // Any other attribute change on a real element → render.
         scheduleRender();
         return;
       }
 
-      // For childList / characterData: skip if target or all changed nodes
-      // are MathJax elements.
       if (isMathJaxNode(m.target)) continue;
 
       var changed = Array.from(m.addedNodes).concat(Array.from(m.removedNodes));
@@ -224,32 +187,24 @@
   }
 
   // ── Unrendered-math safety poll ───────────────────────────────────────────
-  // Catches card transitions the observer can't see: inline-style opacity
-  // swaps, requestAnimationFrame-based reveals, custom event transitions, etc.
-  // A TreeWalker is used (not innerHTML search) so we only visit text nodes
-  // and can quickly check their ancestor chain.
   var MATH_RE = /\\\(|\\\[|\$\$?/;
 
   function hasUnrenderedMath() {
     if (!document.body) return false;
     try {
       var walker = document.createTreeWalker(
-        document.body,
-        NodeFilter.SHOW_TEXT,
-        null,
-        false
+        document.body, NodeFilter.SHOW_TEXT, null, false
       );
       var node;
       while ((node = walker.nextNode())) {
         if (!MATH_RE.test(node.nodeValue)) continue;
-        // Confirm this text node is not already inside an mjx-container.
         var el = node.parentElement;
-        var rendered = false;
+        var inside = false;
         while (el) {
-          if (isMathJaxNode(el)) { rendered = true; break; }
+          if (isMathJaxNode(el)) { inside = true; break; }
           el = el.parentElement;
         }
-        if (!rendered) return true;
+        if (!inside) return true;
       }
     } catch (_) {}
     return false;
@@ -262,7 +217,6 @@
   }, 500);
 
   // ── SPA navigation listeners ──────────────────────────────────────────────
-  // Patch pushState / replaceState — popstate does NOT fire on these calls.
   function patchHistoryMethod(method) {
     var orig = history[method].bind(history);
     history[method] = function () {
@@ -278,7 +232,6 @@
   window.addEventListener('popstate',   scheduleRender);
   window.addEventListener('hashchange', scheduleRender);
 
-  // URL polling — final fallback for anything the above misses.
   setInterval(function () {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
@@ -286,7 +239,9 @@
     }
   }, 1500);
 
-  // ── Boot sequence ─────────────────────────────────────────────────────────
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  // tex-chtml.js loads after this file (per manifest order) and adds
+  // typesetPromise to the window.MathJax object we created above.
   var bootCheck = setInterval(function () {
     if (window.MathJax && MathJax.typesetPromise) {
       clearInterval(bootCheck);
