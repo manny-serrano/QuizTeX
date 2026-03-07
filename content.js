@@ -1,17 +1,18 @@
 /**
- * Quizlet LaTeX Renderer v1.9 — content.js
+ * Quizlet LaTeX Renderer v2.0 — content.js
  *
  * LOAD ORDER: This file MUST load BEFORE tex-svg.js in the manifest.
  *
  * KEY DESIGN DECISIONS:
  *   - SVG output (tex-svg.js): renders math as vector paths, no external
  *     font files needed, immune to CSP restrictions.
- *   - Synchronous MathJax.typeset(): avoids a critical MathJax 3 bug where
- *     typesetPromise()'s internal promise chain breaks permanently if any
- *     call rejects. typeset() uses try/catch instead — no chain to break.
- *   - Never removes <mjx-container> elements: MathJax consumes source text
- *     when rendering; deleting containers leaves blank space.
+ *   - Synchronous MathJax.typeset(): avoids MathJax 3 promise-chain issues.
+ *   - Never removes <mjx-container>: MathJax consumes source text on render.
  *   - Observer paused during typeset to prevent feedback loops.
+ *   - Double-requestAnimationFrame scheduling: ensures React has committed
+ *     its current render before we typeset. Without this, React's follow-up
+ *     re-renders (game state init, timer, layout effects) overwrite our
+ *     typeset output before it ever paints.
  */
 (function () {
   'use strict';
@@ -79,6 +80,8 @@
   var pendingRender = false;
   var lastUrl       = location.href;
   var debounceTimer = null;
+  var rafId1        = null;
+  var rafId2        = null;
 
   // ── helpers ───────────────────────────────────────────────────────────────
   function getTargets() {
@@ -88,8 +91,7 @@
 
   function isMathJaxNode(node) {
     if (!node || !node.nodeName) return false;
-    var name = node.nodeName.toLowerCase();
-    return name.indexOf('mjx-') === 0 || name === 'svg';
+    return node.nodeName.toLowerCase().indexOf('mjx-') === 0;
   }
 
   function pauseObserver() {
@@ -129,8 +131,6 @@
 
     var targets = getTargets();
 
-    // Prefer synchronous typeset — immune to the MathJax 3 promise-chain
-    // bug where a single rejection permanently stalls all future calls.
     if (canSync) {
       try {
         MathJax.typeset(targets);
@@ -139,7 +139,6 @@
       return;
     }
 
-    // Async fallback: repair the internal promise chain before appending.
     try {
       if (MathJax.startup && MathJax.startup.promise) {
         MathJax.startup.promise = MathJax.startup.promise.catch(function () {});
@@ -151,9 +150,35 @@
       .then(renderDone);
   }
 
+  // ── scheduleRender ────────────────────────────────────────────────────────
+  // Double-rAF: debounce rapid mutations (100 ms), then wait TWO animation
+  // frames before running typeset. This ensures React has finished its
+  // commit phase and all useLayoutEffect / componentDidUpdate callbacks have
+  // run. Without this, React's follow-up renders overwrite our output.
+  function cancelScheduled() {
+    if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+    if (rafId1) { cancelAnimationFrame(rafId1); rafId1 = null; }
+    if (rafId2) { cancelAnimationFrame(rafId2); rafId2 = null; }
+  }
+
   function scheduleRender() {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(render, 150);
+    cancelScheduled();
+    debounceTimer = setTimeout(function () {
+      debounceTimer = null;
+      rafId1 = requestAnimationFrame(function () {
+        rafId1 = null;
+        rafId2 = requestAnimationFrame(function () {
+          rafId2 = null;
+          render();
+        });
+      });
+    }, 100);
+  }
+
+  // Also provide an immediate render for boot and tab-return scenarios.
+  function renderNow() {
+    cancelScheduled();
+    render();
   }
 
   // ── Mutation filter ───────────────────────────────────────────────────────
@@ -212,11 +237,22 @@
     return false;
   }
 
+  // Poll every 300 ms — fast enough to catch match-game tiles that appear
+  // after the initial render without noticeable battery impact.
   setInterval(function () {
     if (!isRendering && hasUnrenderedMath()) {
       scheduleRender();
     }
-  }, 500);
+  }, 300);
+
+  // ── Tab visibility / focus ────────────────────────────────────────────────
+  // The match game works after a tab switch because React's rAF loop pauses
+  // in background tabs and the DOM is settled when you return. Replicate that
+  // "settled DOM" effect by rendering on every visibility/focus restoration.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) scheduleRender();
+  });
+  window.addEventListener('focus', scheduleRender);
 
   // ── SPA navigation listeners ──────────────────────────────────────────────
   function patchHistoryMethod(method) {
@@ -245,9 +281,14 @@
   var bootCheck = setInterval(function () {
     if (window.MathJax && (MathJax.typeset || MathJax.typesetPromise)) {
       clearInterval(bootCheck);
-      render();
+      renderNow();
       startObserver();
-      setTimeout(render, 2000);
+      // Staggered safety renders to catch async content (match game tiles,
+      // learn-mode questions, lazy-loaded card content).
+      setTimeout(scheduleRender, 500);
+      setTimeout(scheduleRender, 1000);
+      setTimeout(scheduleRender, 2000);
+      setTimeout(scheduleRender, 4000);
     }
   }, 100);
 
