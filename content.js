@@ -1,35 +1,46 @@
 /**
- * Quizlet LaTeX Renderer v1.3 — content.js
+ * Quizlet LaTeX Renderer v1.4 — content.js
  *
- * WHY THE OLD VERSION BROKE:
- * MathJax 3 marks every node it processes with data-mjx-* attributes and wraps
- * rendered output in <mjx-container> elements. Calling document.state(0) and
- * math.clear() alone is NOT enough — MathJax still sees the data-mjx-* attrs
- * on DOM nodes and skips them. Quizlet's React app replaces card DOM nodes on
- * every flip/mode change, but leftover mjx-container elements and attributes
- * from the previous card confuse MathJax into thinking the work is already done.
+ * ROOT CAUSE OF v1.3 BUG (infinite observer feedback loop):
+ *   MathJax's own DOM mutations — adding <mjx-container> elements during
+ *   typesetPromise(), and removing them in fullReset() — were firing the
+ *   MutationObserver. This created a cycle:
  *
- * THE FIX (fullReset):
- *   1. Reset MathJax document state to 0
- *   2. Clear the internal math item list
- *   3. Strip ALL data-mjx-* attributes from every element in the page
- *   4. Remove ALL <mjx-container> elements (old rendered output)
- * After this, MathJax treats the page as completely fresh.
+ *     fullReset() removes <mjx-container>
+ *       → observer fires → pendingRender = true
+ *     typesetPromise() adds <mjx-container>
+ *       → observer fires → pendingRender stays true
+ *     .then() sees pendingRender → calls render() again
+ *       → fullReset() removes freshly rendered containers
+ *       → observer fires again → ...
  *
- * TRIGGERS: MutationObserver (debounced 80ms), popstate, hashchange,
- *           URL polling every 1500ms, initial render + 2s safety render.
+ *   During a card switch, React is also mutating the DOM simultaneously,
+ *   making the feedback loop non-deterministic. The net result: rendered
+ *   math gets torn down immediately after being built, leaving raw LaTeX.
  *
- * STAMPEDE PROTECTION: A lock prevents concurrent typesetPromise() calls.
- *           If a trigger fires mid-render, one follow-up cycle runs after.
+ * THE FIX:
+ *   Disconnect the MutationObserver BEFORE fullReset() and typesetPromise(),
+ *   then reconnect it AFTER the Promise resolves. MathJax's DOM mutations are
+ *   invisible to the observer, breaking the feedback loop entirely.
+ *
+ * ADDITIONAL FIXES:
+ *   - Patch history.pushState / replaceState — Quizlet uses these for SPA
+ *     navigation (popstate does NOT fire on pushState calls, so the old code
+ *     relied solely on 1500ms polling to catch mode switches).
+ *   - Mutation filter in onMutation() — belt-and-suspenders guard against
+ *     MathJax mutations that could slip through (e.g., during reconnect race).
+ *   - Debounce raised to 150 ms — gives React more time to finish its
+ *     reconciliation pass before we snapshot the DOM.
+ *   - Broader SELECTORS — covers newer Quizlet class-name patterns.
  */
 (function () {
   'use strict';
 
-  // ── Prevent double-injection ────────────────────────────────────────────
+  // ── Prevent double-injection ─────────────────────────────────────────────
   if (window.__qlLatex) return;
   window.__qlLatex = true;
 
-  // ── MathJax config (must exist before MathJax initialises) ──────────────
+  // ── MathJax config (must exist before tex-chtml.js initialises) ──────────
   window.MathJax = {
     tex: {
       inlineMath:  [['\\(', '\\)'], ['$', '$']],
@@ -40,52 +51,65 @@
       skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
     },
     startup: {
-      typeset: false
+      typeset: false   // we call typesetPromise() manually
     }
   };
 
-  // ── Quizlet selectors where card/question content lives ─────────────────
+  // ── Quizlet selectors — where card/question content lives ────────────────
+  // Quizlet uses hashed/generated class names but always includes a stable
+  // human-readable fragment. We match on that fragment with [class*=].
   var SELECTORS = [
+    // Classic flashcard views
     '[class*="CardSide"]',
     '[class*="flashcard"]',
     '[class*="TermText"]',
     '[class*="richText"]',
     '[class*="FormattedText"]',
+    // Learn / Test / Match modes
     '[class*="questionText"]',
     '[class*="answerText"]',
+    '[class*="learnSide"]',
     '[class*="WordText"]',
     '[class*="matchText"]',
-    '[class*="learnSide"]',
-    '[class*="word-list"]'
+    // Word list / set page
+    '[class*="word-list"]',
+    // Newer Quizlet class name patterns (2024–2025 redesigns)
+    '[class*="SetPageTerm"]',
+    '[class*="studiable"]',
+    '[class*="StudyModePage"]',
+    '[class*="card-content"]',
+    '[class*="term-definition"]',
+    '[class*="TermDefinition"]',
+    '[class*="NestableFlashcard"]',
+    '[class*="LearnModeQuestion"]'
   ].join(',');
 
-  // ── State ───────────────────────────────────────────────────────────────
+  var OBSERVE_CONFIG = { childList: true, subtree: true, characterData: true };
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  var observer      = null;   // kept so we can disconnect/reconnect
   var isRendering   = false;
   var pendingRender = false;
   var lastUrl       = location.href;
   var debounceTimer = null;
 
-  /**
-   * fullReset — Completely wipe MathJax's internal caches.
-   * This is the key fix: without steps 3 & 4, MathJax skips nodes it thinks
-   * it already processed even though React replaced the actual DOM elements.
-   */
+  // ── fullReset ─────────────────────────────────────────────────────────────
+  // Wipe MathJax's internal caches and all rendered output from the DOM so
+  // the next typesetPromise() treats the page as completely fresh.
+  // (Called while observer is disconnected, so DOM mutations don't re-trigger.)
   function fullReset() {
     try {
       var doc = MathJax.startup && MathJax.startup.document;
       if (!doc) return;
 
-      // Step 1: Reset document processing state
       doc.state(0);
 
-      // Step 2: Clear the math item list
       if (doc.math && typeof doc.math.clear === 'function') {
         doc.math.clear();
       } else if (doc.math && doc.math.list) {
         doc.math.list = [];
       }
 
-      // Also try removing items individually (belt-and-suspenders)
       if (doc.math && typeof doc.math.toArray === 'function') {
         try {
           var items = doc.math.toArray();
@@ -96,7 +120,8 @@
       }
     } catch (_) {}
 
-    // Step 3: Strip ALL data-mjx-* attributes from the DOM
+    // Strip all data-mjx-* attributes (MathJax uses these to detect already-
+    // processed nodes; without removing them, MathJax silently skips them).
     try {
       document.querySelectorAll('*').forEach(function (el) {
         var toRemove = [];
@@ -105,13 +130,11 @@
             toRemove.push(el.attributes[i].name);
           }
         }
-        for (var j = 0; j < toRemove.length; j++) {
-          el.removeAttribute(toRemove[j]);
-        }
+        toRemove.forEach(function (a) { el.removeAttribute(a); });
       });
     } catch (_) {}
 
-    // Step 4: Remove all rendered MathJax output containers
+    // Remove all rendered MathJax output containers.
     try {
       document.querySelectorAll('mjx-container').forEach(function (c) {
         c.remove();
@@ -119,13 +142,24 @@
     } catch (_) {}
   }
 
-  /** Get Quizlet card elements, or fall back to document.body */
+  // ── getTargets ────────────────────────────────────────────────────────────
   function getTargets() {
     var els = document.querySelectorAll(SELECTORS);
     return els.length ? Array.from(els) : [document.body];
   }
 
-  /** Run a full reset + typeset cycle, with lock to prevent stampede */
+  // ── Observer pause / resume ───────────────────────────────────────────────
+  function pauseObserver() {
+    if (observer) observer.disconnect();
+  }
+
+  function resumeObserver() {
+    if (observer && document.body) {
+      observer.observe(document.body, OBSERVE_CONFIG);
+    }
+  }
+
+  // ── render ────────────────────────────────────────────────────────────────
   function render() {
     if (isRendering) {
       pendingRender = true;
@@ -133,46 +167,94 @@
     }
     if (!window.MathJax || !MathJax.typesetPromise) return;
 
-    isRendering = true;
+    isRendering   = true;
+    pendingRender = false;
+
+    // KEY FIX: Disconnect so MathJax's own DOM mutations (adding/removing
+    // mjx-container elements) don't fire the observer and re-trigger render().
+    pauseObserver();
     fullReset();
 
     MathJax.typesetPromise(getTargets())
       .catch(function () {})
       .then(function () {
         isRendering = false;
+        // Re-attach observer AFTER render is fully done — any Quizlet DOM
+        // changes that happen from this point onward will be caught.
+        resumeObserver();
+
         if (pendingRender) {
+          // Something changed while we were rendering (e.g., React finished a
+          // card swap mid-typesetPromise). Schedule exactly one follow-up cycle.
           pendingRender = false;
-          render(); // exactly one follow-up cycle
+          scheduleRender();
         }
       });
   }
 
-  /** Debounced render — batches rapid React mutations into one cycle */
+  // ── scheduleRender ────────────────────────────────────────────────────────
+  // 150 ms gives React's reconciliation a comfortable window to finish before
+  // we snapshot the DOM. Adjust down if renders feel sluggish on slow machines.
   function scheduleRender() {
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(render, 80);
+    debounceTimer = setTimeout(render, 150);
   }
 
-  // ── MutationObserver ────────────────────────────────────────────────────
+  // ── Mutation filter ───────────────────────────────────────────────────────
+  // Belt-and-suspenders: even with the pause/resume approach, guard against
+  // MathJax mutations slipping through during the brief reconnect window.
+  function isMathJaxNode(node) {
+    if (!node || !node.nodeName) return false;
+    return node.nodeName.toLowerCase().indexOf('mjx-') === 0;
+  }
+
+  function onMutation(mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      var m = mutations[i];
+
+      // Skip mutations whose target is a MathJax element.
+      if (isMathJaxNode(m.target)) continue;
+
+      // Skip batches where every changed node is a MathJax element.
+      var changed = Array.from(m.addedNodes).concat(Array.from(m.removedNodes));
+      if (changed.length > 0 && changed.every(isMathJaxNode)) continue;
+
+      // A real content change — schedule a render and stop scanning mutations.
+      scheduleRender();
+      return;
+    }
+  }
+
+  // ── MutationObserver ──────────────────────────────────────────────────────
   function startObserver() {
     if (!document.body) {
       setTimeout(startObserver, 100);
       return;
     }
-    new MutationObserver(function () {
-      scheduleRender();
-    }).observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
+    observer = new MutationObserver(onMutation);
+    observer.observe(document.body, OBSERVE_CONFIG);
   }
 
-  // ── SPA navigation listeners ────────────────────────────────────────────
-  window.addEventListener('popstate', scheduleRender);
+  // ── SPA navigation listeners ──────────────────────────────────────────────
+  // popstate fires on browser back/forward but NOT on history.pushState calls.
+  // Quizlet uses pushState for every card-mode switch, so we must patch it.
+  function patchHistoryMethod(method) {
+    var orig = history[method].bind(history);
+    history[method] = function () {
+      orig.apply(this, arguments);
+      scheduleRender();
+    };
+  }
+  try {
+    patchHistoryMethod('pushState');
+    patchHistoryMethod('replaceState');
+  } catch (_) {}
+
+  window.addEventListener('popstate',   scheduleRender);
   window.addEventListener('hashchange', scheduleRender);
 
-  // ── URL polling safety net (catches navigations events miss) ────────────
+  // URL polling — final safety net for any navigation that slips through all
+  // of the above (e.g., iframes, custom router events, browser extensions).
   setInterval(function () {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
@@ -180,13 +262,14 @@
     }
   }, 1500);
 
-  // ── Boot sequence: wait for MathJax, then start everything ──────────────
+  // ── Boot sequence ─────────────────────────────────────────────────────────
+  // tex-chtml.js loads asynchronously; poll until MathJax is ready.
   var bootCheck = setInterval(function () {
     if (window.MathJax && MathJax.typesetPromise) {
       clearInterval(bootCheck);
-      render();                    // first render
-      startObserver();             // start watching DOM
-      setTimeout(render, 2000);   // safety render for late-loading content
+      render();                   // initial render
+      startObserver();            // start watching for DOM changes
+      setTimeout(render, 2000);  // safety render for late-loading card content
     }
   }, 100);
 
