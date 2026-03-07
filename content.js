@@ -1,17 +1,25 @@
 /**
- * Quizlet LaTeX Renderer v1.6 — content.js
+ * Quizlet LaTeX Renderer v1.7 — content.js
  *
- * CRITICAL: This file MUST load BEFORE tex-chtml.js in the manifest.
- * MathJax 3 reads window.MathJax for config at initialization. If tex-chtml.js
- * loads first, it initializes with defaults and attaches its API (typesetPromise,
- * startup, etc.) to window.MathJax. Then this script overwrites that object with
- * a plain config literal, destroying every API method. All subsequent render()
- * calls silently bail out because MathJax.typesetPromise is undefined.
+ * LOAD ORDER: This file MUST load BEFORE tex-chtml.js in the manifest.
+ * It sets window.MathJax config; tex-chtml.js reads it and adds its API
+ * to the same object.
  *
- * With the correct order (content.js → tex-chtml.js):
- *   1. This script sets window.MathJax = { config... }
- *   2. tex-chtml.js reads that config and ADDS its runtime API to the same object
- *   3. window.MathJax now has both our config and MathJax's methods
+ * RENDERING STRATEGY:
+ *   MathJax 3 is destructive — it REPLACES source text nodes (\( x^2 \))
+ *   with <mjx-container> elements. The original text is gone. If you remove
+ *   the mjx-container, you get blank space — there's nothing left to re-render.
+ *
+ *   Therefore we NEVER remove mjx-containers. Instead:
+ *     1. Call MathJax.typesetClear() to reset the internal state machine
+ *        (so MathJax will re-run findMath on the next typesetPromise call)
+ *     2. Call MathJax.typesetPromise(targets) — MathJax scans for text nodes
+ *        containing math delimiters. Already-rendered math has no text nodes
+ *        (they were consumed), so MathJax only finds and processes NEW content
+ *        from card switches. Existing rendered math is untouched.
+ *
+ *   This makes re-rendering idempotent: calling render() extra times is
+ *   harmless — MathJax scans, finds nothing new, and returns.
  */
 (function () {
   'use strict';
@@ -70,37 +78,6 @@
   var lastUrl       = location.href;
   var debounceTimer = null;
 
-  // ── fullReset ─────────────────────────────────────────────────────────────
-  function fullReset() {
-    // Use the official MathJax 3 API to clear typeset state (available 3.0+).
-    try {
-      if (typeof MathJax.typesetClear === 'function') {
-        MathJax.typesetClear();
-      }
-    } catch (_) {}
-
-    // Remove all rendered MathJax output from the DOM.
-    try {
-      document.querySelectorAll('mjx-container').forEach(function (c) {
-        c.remove();
-      });
-    } catch (_) {}
-
-    // Strip data-mjx-* attributes so MathJax doesn't skip re-processing nodes.
-    try {
-      var tagged = document.querySelectorAll('[data-mjx-texclass],[data-mjx-alternate]');
-      tagged.forEach(function (el) {
-        var toRemove = [];
-        for (var i = 0; i < el.attributes.length; i++) {
-          if (el.attributes[i].name.indexOf('data-mjx') === 0) {
-            toRemove.push(el.attributes[i].name);
-          }
-        }
-        toRemove.forEach(function (a) { el.removeAttribute(a); });
-      });
-    } catch (_) {}
-  }
-
   // ── helpers ───────────────────────────────────────────────────────────────
   function getTargets() {
     var els = document.querySelectorAll(SELECTORS);
@@ -134,7 +111,15 @@
     pendingRender = false;
 
     pauseObserver();
-    fullReset();
+
+    // Reset MathJax's internal state machine so findMath() re-scans the DOM.
+    // DO NOT remove <mjx-container> elements — MathJax consumed the source
+    // text when it created them; removing them leaves blank space.
+    try {
+      if (typeof MathJax.typesetClear === 'function') {
+        MathJax.typesetClear();
+      }
+    } catch (_) {}
 
     MathJax.typesetPromise(getTargets())
       .catch(function () {})
@@ -187,7 +172,9 @@
   }
 
   // ── Unrendered-math safety poll ───────────────────────────────────────────
-  var MATH_RE = /\\\(|\\\[|\$\$?/;
+  // Uses \( and \[ and $$ but NOT single $ (too many false positives from
+  // currency strings like "$5.99" in Quizlet's UI).
+  var MATH_RE = /\\\(|\\\[|\$\$/;
 
   function hasUnrenderedMath() {
     if (!document.body) return false;
@@ -240,8 +227,6 @@
   }, 1500);
 
   // ── Boot ──────────────────────────────────────────────────────────────────
-  // tex-chtml.js loads after this file (per manifest order) and adds
-  // typesetPromise to the window.MathJax object we created above.
   var bootCheck = setInterval(function () {
     if (window.MathJax && MathJax.typesetPromise) {
       clearInterval(bootCheck);
