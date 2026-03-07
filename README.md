@@ -6,7 +6,7 @@ A Chrome extension that renders LaTeX equations on Quizlet. Quizlet stores math 
 
 - Flashcards (flip + next/prev)
 - Learn mode
-- Match game (renders after tab switch; known limitation)
+- Match game
 - Test mode
 - Set/word list pages
 
@@ -26,3 +26,5 @@ The extension injects MathJax's `tex-svg.js` bundle as a content script. A `Muta
 - The observer is paused during typeset to prevent feedback loops from MathJax's own DOM mutations
 - Uses synchronous `MathJax.typeset()` instead of `typesetPromise()` to avoid MathJax 3's internal promise-chain stalling
 - A 500ms safety poll catches content that the observer misses
+- `visibilitychange` triggers staggered renders when switching back to the tab (match game defers DOM updates until focused)
+- Post-render `requestAnimationFrame` check catches content that appears in the next frame
