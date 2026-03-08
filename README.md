@@ -1,8 +1,10 @@
 # QuizTeX
 
-A Quizlet-only Chrome extension that renders LaTeX equations automatically across Quizlet study modes and games. Quizlet stores math as raw LaTeX delimiters (`\( ... \)`, `$ ... $`) but doesn't reliably render them — this extension uses MathJax 3 (SVG output) to display properly typeset formulas.
+A Quizlet-tailored Chrome extension that renders LaTeX equations automatically across Quizlet study modes and games. 
 
-QuizTeX is purpose-built for Quizlet and optimized for full mode coverage, making it the most complete LaTeX rendering extensions for Quizlet flashcards and game modes.
+The problem with Quizlet is that it stores math as raw LaTeX delimiters (`\( ... \)`, `$ ... $`) but doesn't reliably render them — this extension uses MathJax 3 (SVG output) to display properly typeset formulas.
+
+QuizTeX is purpose-built for Quizlet and optimized for full mode coverage, making it the most complete LaTeX rendering extension for Quizlet flashcards and all other study modes!
 
 https://github.com/user-attachments/assets/548dbced-7284-4c79-8a7b-cb2f18153efd
 
@@ -35,5 +37,8 @@ The extension injects MathJax's `tex-svg.js` bundle as a content script. A `Muta
 - `all_frames`, `match_about_blank`, and `match_origin_as_fallback` are enabled so rendering also works in related game frames
 - Safety polling and post-render checks catch deferred React/UI updates without re-typesetting already-rendered nodes
 
+## Status
+
+QuizTeX is under review and coming soon to the Chrome Web Store!
 
 
