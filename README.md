@@ -1,6 +1,8 @@
 # QuizTeX
 
-A Chrome extension that renders LaTeX equations on Quizlet. Quizlet stores math as raw LaTeX delimiters (`\( ... \)`, `$ ... $`) but doesn't render them — this extension uses MathJax 3 (SVG output) to display them as properly typeset formulas.
+A Quizlet-only Chrome extension that renders LaTeX equations automatically across Quizlet study modes and games. Quizlet stores math as raw LaTeX delimiters (`\( ... \)`, `$ ... $`) but doesn't reliably render them — this extension uses MathJax 3 (SVG output) to display properly typeset formulas.
+
+QuizTeX is purpose-built for Quizlet and optimized for full mode coverage, making it the most complete LaTeX rendering extensions for Quizlet flashcards and game modes.
 
 ## Supported Modes
 
