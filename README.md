@@ -4,6 +4,8 @@ A Quizlet-only Chrome extension that renders LaTeX equations automatically acros
 
 QuizTeX is purpose-built for Quizlet and optimized for full mode coverage, making it the most complete LaTeX rendering extensions for Quizlet flashcards and game modes.
 
+https://github.com/user-attachments/assets/548dbced-7284-4c79-8a7b-cb2f18153efd
+
 ## Supported Modes
 
 - Flashcards (flip + next/prev)
