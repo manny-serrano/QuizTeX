@@ -351,7 +351,7 @@
   }
 
   // ── Unrendered-math safety poll ───────────────────────────────────────────
-  var MATH_RE = /\\\(|\\\[|\$\$/;
+  var MATH_RE = /\\\(|\\\[|\$/;
 
   function hasUnrenderedMath() {
     if (!document.body) return false;
