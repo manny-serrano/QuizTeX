@@ -1,5 +1,5 @@
 /**
- * Quizlet LaTeX Renderer v1.9 — content.js
+ * QuizTeX v1.9 — content.js
  *
  * LOAD ORDER: This file MUST load BEFORE tex-svg.js in the manifest.
  *

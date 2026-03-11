@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Quizlet LaTeX Renderer does not collect, store, or transmit personal data.
+QuizTeX does not collect, store, or transmit personal data.
 
 ## What the extension does
 

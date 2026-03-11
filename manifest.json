@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Quizlet LaTeX Renderer",
+  "name": "QuizTeX",
   "version": "1.10.0",
   "description": "Automatically renders LaTeX equations on Quizlet so you can read math and physics formulas clearly.",
   "host_permissions": [
