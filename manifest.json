@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "QuizTeX",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "description": "Automatically renders LaTeX equations on Quizlet so you can read math and physics formulas clearly.",
   "host_permissions": [
     "https://*.quizlet.com/*"
