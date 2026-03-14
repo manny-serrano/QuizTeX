@@ -1,4 +1,4 @@
-# <img src="icon48.png" width="32" height="32" alt="QuizTeX" /> QuizTeX
+# <img src="icon48.png" width="48" height="48" alt="QuizTeX" /> QuizTeX
 
 A Quizlet-tailored Chrome extension that renders LaTeX equations automatically across Quizlet study modes and games. 
 
