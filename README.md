@@ -27,9 +27,26 @@ The extension injects MathJax's `tex-svg.js` bundle as a content script. A `Muta
 
 ## Install
 
+Visit https://chromewebstore.google.com/detail/ppljcggfeggnfoidkilaiepncfjiipaj?utm_source=item-share-cb to add the extension in your Google Browser. You can also install it manually through the following steps:
 1. Clone or download this repo
 2. Go to `chrome://extensions` and enable Developer Mode
 3. Click "Load unpacked" and select the project folder
+
+## Usage Tips
+QuizTeX automatically renders any LaTeX found on Quizlet, which is great for studying but can interfere when you're editing or importing flashcards, since the live rendering will reformat your LaTeX as you type.
+To prevent the extension from auto-modifying your data while editing you can turn the extension off during editing then back on once you are ready to practice. You can also configure the extension to run only on demand:
+
+- Select the More Options (three vertical dots) on the QuizTeX extension
+- Select "This can read and change site data"
+- Select "On quizlet.com"
+- Select "This can read and change site data" again
+- Select "When you click the extension"
+- A popup will ask you to reload — click "Reload"
+- 
+Once configured this way, the extension will only render LaTeX when you manually click it, so your flashcard data stays untouched while you edit. When you're ready to view your cards with rendered LaTeX, simply click the extension and everything will typeset as expected.
+
+⚠️ Skipping this step can cause data loss. If the extension is left in its default auto-run mode while you edit, it may reformat your raw LaTeX into something else, requiring you to manually fix each card.
+Always turn off (or switch to click-only mode) before importing a study set or writing new LaTeX content, then re-enable when you're done.
 
 ## Technical Notes
 
@@ -40,9 +57,4 @@ The extension injects MathJax's `tex-svg.js` bundle as a content script. A `Muta
 - Fast game modes (Match + Blast) use interaction-triggered and mutation-triggered render bursts to avoid delayed first render
 - `all_frames`, `match_about_blank`, and `match_origin_as_fallback` are enabled so rendering also works in related game frames
 - Safety polling and post-render checks catch deferred React/UI updates without re-typesetting already-rendered nodes
-
-## Status
-
-QuizTeX is under review and coming soon to the Chrome Web Store!
-
 
