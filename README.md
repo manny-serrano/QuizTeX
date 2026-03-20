@@ -42,7 +42,7 @@ To prevent the extension from auto-modifying your data while editing you can tur
 - Select "This can read and change site data" again
 - Select "When you click the extension"
 - A popup will ask you to reload — click "Reload"
-- 
+  
 Once configured this way, the extension will only render LaTeX when you manually click it, so your flashcard data stays untouched while you edit. When you're ready to view your cards with rendered LaTeX, simply click the extension and everything will typeset as expected.
 
 ⚠️ Skipping this step can cause data loss. If the extension is left in its default auto-run mode while you edit, it may reformat your raw LaTeX into something else, requiring you to manually fix each card.
