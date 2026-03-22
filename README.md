@@ -58,6 +58,6 @@ Always turn off (or switch to click-only mode) before importing a study set or w
 - `all_frames`, `match_about_blank`, and `match_origin_as_fallback` are enabled so rendering also works in related game frames
 - Safety polling and post-render checks catch deferred React/UI updates without re-typesetting already-rendered nodes
 - MathJax nodes are detected via `mjx-*` elements only; generic `<svg>` is **not** treated as MathJax (Quizlet often wraps card text in `<svg><foreignObject>…</foreignObject></svg>`, which previously blocked all rendering in those subtrees)
-- The TeX `boldsymbol` package is enabled so `\boldsymbol{…}` (common in ML/stats notation) typesets instead of showing red “unknown command” fragments
+- `\boldsymbol{…}` is implemented via a **TeX macro** (`\mathbf{#1}`) so MathJax never loads the remote `boldsymbol` extension — that load is blocked by Quizlet’s CSP and would prevent all rendering
 - A **notation reference** for a large diffusion/GAN/latent-variable study set (vectors, `\mathbb{E}`, `\mathcal{N}`, `\dfrac`, GAN objectives, diffusion noise `\boldsymbol{\epsilon}`, etc.) lives in [`docs/REFERENCE_NOTATION.md`](docs/REFERENCE_NOTATION.md) so you can confirm coverage when Quizlet or MathJax updates
 

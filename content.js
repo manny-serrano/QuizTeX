@@ -22,11 +22,12 @@
   // ── MathJax config — set BEFORE tex-svg.js reads it ───────────────────────
   window.MathJax = {
     tex: {
-      // TeX packages: bundled tex-svg.js already includes ams, textmacros, newcommand, etc.
-      // We only add boldsymbol — needed for ML/stats sets (e.g. \boldsymbol{\epsilon} in
-      // diffusion forward process, noise-prediction loss). See docs/REFERENCE_NOTATION.md
-      // for a full command checklist (GAN minimax, \mathbb{E}, \mathcal{N}, \dfrac, norms).
-      packages: { '[+]': ['boldsymbol'] },
+      // Do NOT use packages: { '[+]': ['boldsymbol'] } — MathJax would try to fetch
+      // input/tex/extensions/boldsymbol.js from a URL, which Quizlet's CSP blocks and
+      // breaks all rendering. Define \boldsymbol locally instead (same look for vectors).
+      macros: {
+        boldsymbol: ['\\mathbf{#1}', 1]
+      },
       inlineMath:  [['\\(', '\\)'], ['$', '$']],
       displayMath: [['\\[', '\\]'], ['$$', '$$']],
       processEscapes: true

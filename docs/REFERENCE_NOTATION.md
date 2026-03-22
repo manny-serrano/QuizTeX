@@ -8,14 +8,14 @@ Goal: every delimiter-wrapped expression should typeset with the **bundled** `te
 | Mechanism | Purpose |
 |-----------|---------|
 | Default `tex-svg` stack | `ams`, `newcommand`, `textmacros`, `autoload`, etc. — provides `\dfrac`, `\mathbb`, `\mathcal`, `\text{…}`, `\sum`, `\prod`, `\sqrt`, `\log`, `\min`, `\max`, `\cdots`, `\to`, `\|`, environments |
-| `packages: { '[+]': ['boldsymbol'] }` | `\boldsymbol{…}` (e.g. noise `\boldsymbol{\epsilon}`) — **not** on by default |
+| `tex.macros.boldsymbol` → `\mathbf{#1}` | Same visual as AMS `\boldsymbol` without loading `boldsymbol.js` (Quizlet CSP blocks that script) |
 | `inlineMath` `$…$` / `\(...\)` | Quizlet-style inline math |
 | SVG false-positive fix | Card text inside `<svg><foreignObject>` is typeset (see README Technical Notes) |
 
 ## Commands appearing in the reference set
 
 - **Vectors / bold**: `\mathbf{z}`, `\mathbf{w}`, `\mathbf{x}`, `\mathbf{0}`, `\mathbf{I}`
-- **Bold Greek (requires `boldsymbol`)**: `\boldsymbol{\epsilon}`
+- **Bold Greek (macro `\boldsymbol` → `\mathbf`)**: `\boldsymbol{\epsilon}`
 - **Blackboard bold**: `\mathbb{E}`
 - **Calligraphic**: `\mathcal{N}`, `\mathcal{L}`
 - **Operators / calculus**: `\min`, `\max`, `\log`, `\sum`, `\prod`, `\sqrt`, `\frac`, `\dfrac`
@@ -39,4 +39,4 @@ QuizTeX does not change these — they stay as normal text:
 2. Open the set in **Flashcards**, **Test**, **Match**, and **Blast**.
 3. Confirm cards that use `\boldsymbol{\epsilon}` and long GAN / diffusion equations render fully (no red unknown-command fragments).
 
-If a **new** macro fails (rare), check [MathJax TeX extensions](https://docs.mathjax.org/en/latest/input/tex/extensions/index.html) and add it to `tex.packages['[+]']` **only if** the symbol exists in the bundled `tex-svg.js`.
+If a **new** macro fails (rare), prefer defining it under `tex.macros` in `content.js` so nothing is fetched from the network. Avoid `tex.packages['[+]']` for extensions that aren’t already inlined in `tex-svg.js` — Quizlet’s CSP blocks those script loads and can break **all** rendering.
