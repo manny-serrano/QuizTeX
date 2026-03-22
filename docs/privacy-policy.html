@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuizTeX — Privacy Policy</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.55; color: #1a1a1a; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+    p, ul { margin: 0.75rem 0; }
+    ul { padding-left: 1.25rem; }
+    .meta { color: #555; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    footer { margin-top: 2rem; font-size: 0.85rem; color: #666; border-top: 1px solid #ddd; padding-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>QuizTeX — Privacy Policy</h1>
+  <p class="meta">Last updated: March 7, 2026 · This extension is distributed via the Chrome Web Store.</p>
+
+  <p><strong>QuizTeX does not collect, store, or transmit personal data.</strong> All rendering happens locally in your browser using bundled scripts (MathJax) included with the extension.</p>
+
+  <h2>What the extension does</h2>
+  <ul>
+    <li>Runs only on Quizlet websites (<code>https://*.quizlet.com/*</code>).</li>
+    <li>Reads page content that is already displayed to you so it can find raw LaTeX delimiters and typeset them as math.</li>
+    <li>Does not send your flashcards, answers, or account information to the developer or third parties.</li>
+  </ul>
+
+  <h2>Data handling</h2>
+  <ul>
+    <li>No analytics, tracking, advertising identifiers, or telemetry.</li>
+    <li>No remote API calls are made by the extension for rendering (MathJax is bundled; see technical note below).</li>
+    <li>No cookies are set by the extension.</li>
+    <li>No separate user database or cloud sync operated by this extension.</li>
+  </ul>
+
+  <h2>Permissions (why they are needed)</h2>
+  <ul>
+    <li><strong>Site access (Quizlet):</strong> Required to inject the content script that runs MathJax on study pages you open.</li>
+    <li><strong>Frames:</strong> Some Quizlet modes load content in nested frames; frame access is needed so math renders consistently.</li>
+  </ul>
+
+  <h2>Third parties</h2>
+  <p>This extension uses the <strong>MathJax</strong> library <strong>bundled inside the extension package</strong> (no network fetch for math rendering). Quizlet’s own services are governed by Quizlet’s privacy policy, not this policy.</p>
+
+  <h2>Children</h2>
+  <p>The extension is a general-purpose study aid. It does not knowingly collect personal information from anyone, including children.</p>
+
+  <h2>Changes</h2>
+  <p>If these practices change, this policy will be updated before a new version is published to the Chrome Web Store.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy: open an issue on the <a href="https://github.com/manny-serrano/QuizTeX" rel="noopener">QuizTeX GitHub repository</a> or use the contact channel listed on the Chrome Web Store developer page.</p>
+
+  <footer>
+    QuizTeX is an independent project and is not affiliated with or endorsed by Quizlet Inc.
+  </footer>
+</body>
+</html>

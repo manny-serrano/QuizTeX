@@ -1,5 +1,7 @@
 # <img src="icon48.png" width="48" height="48" alt="QuizTeX" /> QuizTeX
 
+*Independent project — not affiliated with or endorsed by Quizlet Inc.*
+
 A Quizlet-tailored Chrome extension that renders LaTeX equations automatically across Quizlet study modes and games. 
 
 The problem with Quizlet is that it stores math as raw LaTeX delimiters (`\( ... \)`, `$ ... $`) but doesn't reliably render them — this extension uses MathJax 3 (SVG output) to display properly typeset formulas.
@@ -24,6 +26,12 @@ Chrome Web Store Link: https://chromewebstore.google.com/detail/ppljcggfeggnfoid
 ## How It Works
 
 The extension injects MathJax's `tex-svg.js` bundle as a content script. A `MutationObserver` detects DOM changes from Quizlet's React SPA (card switches, mode changes, navigation) and re-typesets new content automatically. SVG output is used instead of CHTML to avoid CSP restrictions on external font loading.
+
+## Chrome Web Store (publish / update)
+
+1. Read **[`docs/STORE_SUBMISSION.md`](docs/STORE_SUBMISSION.md)** — checklist, permissions wording, privacy URL, and policy alignment.
+2. Host **[`docs/privacy-policy.html`](docs/privacy-policy.html)** on **HTTPS** (e.g. GitHub Pages) and paste that URL in the store’s **Privacy policy** field.
+3. Build the upload zip: `./scripts/package-extension.sh` → upload `dist/quiztex-v*.zip` in the [Developer Dashboard](https://chrome.google.com/webstore/devconsole).
 
 ## Install
 

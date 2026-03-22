@@ -3,6 +3,7 @@
   "name": "QuizTeX",
   "version": "1.10.4",
   "description": "Automatically renders LaTeX equations on Quizlet so you can read math and physics formulas clearly.",
+  "homepage_url": "https://github.com/manny-serrano/QuizTeX",
   "host_permissions": [
     "https://*.quizlet.com/*"
   ],
