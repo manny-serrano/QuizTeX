@@ -22,6 +22,11 @@
   // ── MathJax config — set BEFORE tex-svg.js reads it ───────────────────────
   window.MathJax = {
     tex: {
+      // TeX packages: bundled tex-svg.js already includes ams, textmacros, newcommand, etc.
+      // We only add boldsymbol — needed for ML/stats sets (e.g. \boldsymbol{\epsilon} in
+      // diffusion forward process, noise-prediction loss). See docs/REFERENCE_NOTATION.md
+      // for a full command checklist (GAN minimax, \mathbb{E}, \mathcal{N}, \dfrac, norms).
+      packages: { '[+]': ['boldsymbol'] },
       inlineMath:  [['\\(', '\\)'], ['$', '$']],
       displayMath: [['\\[', '\\]'], ['$$', '$$']],
       processEscapes: true
@@ -67,7 +72,13 @@
     '[class*="BlastOption"]',
     '[class*="GravityMode"]',
     '[class*="GameTile"]',
-    '[class*="game-tile"]'
+    '[class*="game-tile"]',
+    // Quizlet UI churn: extra patterns for flashcards / modes
+    '[class*="StudiableItem"]',
+    '[class*="StudiableCard"]',
+    '[class*="FlashcardSide"]',
+    '[class*="TestQuestion"]',
+    '[class*="MultipleChoice"]'
   ].join(',');
 
   var MATCH_GAME_SELECTOR = '[class*="MatchModeQuestionGridBoard"], [class*="MatchModeQuestionScatterBoard"], [class*="MatchModeQuestionGridTile"]';
@@ -188,7 +199,15 @@
   function isMathJaxNode(node) {
     if (!node || !node.nodeName) return false;
     var name = node.nodeName.toLowerCase();
-    return name.indexOf('mjx-') === 0 || name === 'svg';
+    if (name.indexOf('mjx-') === 0) return true;
+    // Do NOT treat every <svg> as MathJax. Quizlet often puts card HTML inside
+    // <svg><foreignObject>…</foreignObject></svg>; a bare `svg` check skipped
+    // all math in those subtrees. Only flag SVG that is MathJax output.
+    if (name === 'svg') {
+      var p = node.parentElement;
+      return !!(p && p.nodeName && p.nodeName.toLowerCase().indexOf('mjx-') === 0);
+    }
+    return false;
   }
 
   function pauseObserver() {
